@@ -1,0 +1,139 @@
+# Import necessary libraries
+from dataclasses import dataclass
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import OrdinalEncoder
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from imblearn.over_sampling import SMOTE
+import xgboost as xgb
+
+# Set plotting styles
+%matplotlib inline
+plt.style.use('seaborn-darkgrid')
+
+# Load data
+data = pd.read_csv('/content/students_adaptability_level_online_education (1).csv')
+
+# Basic data checks
+print(data.head())
+print(data.info())
+print(data.describe().T)
+print(data.isnull().sum())
+
+# Data preprocessing
+data.rename(columns={'Adaptivity Level': 'Adaptivity', 'Age': 'Age Range'}, inplace=True)
+data.replace({"Boy": "Male", "Girl": "Female", "Mid": "Middle Class", "Poor": "Lower Class", "Rich": "Upper Class"}, inplace=True)
+
+# Plot Adaptivity Levels
+def plot_adaptivity_pie_chart(data):
+    cmap = plt.get_cmap("tab20c")
+    inner_colors = cmap(np.array([1, 2, 5, 6, 9, 10]))
+    adaptivity_counts = data['Adaptivity'].value_counts()
+
+    plt.figure(figsize=(8,8))
+    plt.pie(adaptivity_counts, colors=inner_colors,
+            labels=adaptivity_counts.index, startangle=90, autopct="%1.0f%%",
+            shadow=True)
+    plt.title("Adaptivity Levels Among Students")
+    plt.show()
+
+plot_adaptivity_pie_chart(data)
+
+# Group data and print
+def create_groups(df, var1, var2):
+    category = df.groupby([var1, var2])[var2].count().to_frame()
+    print(f'Adaptivity by {var1}')
+    return category
+
+print(create_groups(data, 'Education Level', 'Adaptivity'))
+
+# Plot feature distributions
+def plot_feature_distributions(data):
+    plt.figure(figsize=(15, 25))
+    for i, feature in enumerate(data.columns, 1):
+        plt.subplot(6, 3, i)
+        sns.countplot(x=feature, data=data)
+    plt.tight_layout()
+    plt.show()
+
+plot_feature_distributions(data)
+
+# Plot feature distributions by Adaptivity
+def plot_feature_distributions_by_adaptivity(data):
+    plt.figure(figsize=(15, 25))
+    for i, feature in enumerate(data.columns, 1):
+        plt.subplot(6, 3, i)
+        sns.countplot(x=feature, hue='Adaptivity', data=data)
+    plt.tight_layout()
+    plt.show()
+
+plot_feature_distributions_by_adaptivity(data)
+
+# Further preprocessing
+data['Lower limit Age'] = data['Age Range'].apply(lambda x: int(x.split("-")[0]))
+data.drop(['Age Range'], axis=1, inplace=True)
+
+# Encode categorical features
+encoder = OrdinalEncoder()
+encoded_data = encoder.fit_transform(data)
+encoded_df = pd.DataFrame(encoded_data, columns=data.columns)
+
+# Handle class imbalance
+smote = SMOTE()
+features, labels = smote.fit_resample(encoded_df.drop("Adaptivity", axis=1), encoded_df["Adaptivity"])
+
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.33, random_state=42)
+
+# Define models
+models = {
+    'RandomForest': RandomForestClassifier(),
+    'KNeighbors': KNeighborsClassifier(),
+    'SVC': SVC(),
+    'LogisticRegression': LogisticRegression(max_iter=1000),
+    'XGBoost': xgb.XGBClassifier(),
+    'GradientBoosting': GradientBoostingClassifier()
+}
+
+# Train and evaluate models
+def train_and_evaluate(models, X_train, X_test, y_train, y_test):
+    for name, model in models.items():
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        print(f'Model: {name}')
+        print(classification_report(y_test, y_pred, zero_division=1))
+        print('-' * 30, '\n')
+
+train_and_evaluate(models, X_train, X_test, y_train, y_test)
+
+# RandomForest feature importance and confusion matrix
+rf_model = models['RandomForest']
+y_pred = rf_model.predict(X_test)
+print(classification_report(y_test, y_pred, zero_division=1))
+
+cm = confusion_matrix(y_test, y_pred)
+disp = ConfusionMatrixDisplay(cm, display_labels=rf_model.classes_)
+disp.plot()
+plt.title("Confusion Matrix")
+plt.show()
+
+# Feature importances
+def plot_feature_importances(model, feature_names):
+    feature_importances = model.feature_importances_
+    feature_importances_df = pd.DataFrame({'features': feature_names, 'feature_importances': feature_importances})
+    feature_importances_df.sort_values('feature_importances', ascending=False, inplace=True)
+
+    plt.figure(figsize=(10, 8))
+    sns.barplot(x='feature_importances', y='features', data=feature_importances_df)
+    plt.title('Feature Importances')
+    plt.show()
+
+plot_feature_importances(rf_model, X_train.columns)
+
